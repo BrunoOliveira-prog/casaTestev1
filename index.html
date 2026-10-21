@@ -1,0 +1,766 @@
+<title>Planta 3D</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+/* Layout: mesa de desenho. Palco 3D à esquerda, painel de cômodos e JSON à direita; no celular o painel desce para baixo do palco. */
+:root{
+  --bg:#e9edf1; --panel:#f8f9fb; --ink:#111a23; --muted:#556473; --line:#d0d8e0; --hover:#eef2f6; --sel:#e3edfb;
+  --accent:#1b5ed8; --accent-ink:#ffffff; --code-bg:#eef2f6; --bad:#b3261e; --ok:#17794a;
+  --scene-bg:#dde3e9; --wall:#fafbfc; --slab:#bcc6d0; --grid-a:#b6c0ca; --grid-b:#ccd4dc;
+  --glass:#78aee6; --door:#b98a5e; --arc:#4b5b6b;
+  --label-bg:rgba(250,251,252,0.92); --label-ink:#111a23; --label-muted:#556473;
+  --f-social:#d3bc93; --f-servico:#b8c8d2; --f-circ:#c9cfd5; --f-intimo:#b9c9b1; --f-umido:#98c2d1; --f-neutral:#cfd4d9;
+  --font-display:'Barlow Condensed','Arial Narrow',sans-serif;
+  --font-body:'IBM Plex Sans',system-ui,sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0a1521; --panel:#0f1e2d; --ink:#e5edf5; --muted:#8ea2b5; --line:#21364a; --hover:#14283a; --sel:#13304f;
+    --accent:#5aa9ff; --accent-ink:#06121e; --code-bg:#09131e; --bad:#ff8f86; --ok:#6fd39f;
+    --scene-bg:#0c1925; --wall:#d9e1ea; --slab:#1a2d3f; --grid-a:#1f3348; --grid-b:#162a3c;
+    --glass:#4f8fc9; --door:#8f6c49; --arc:#9fb3c6;
+    --label-bg:rgba(9,19,30,0.9); --label-ink:#e5edf5; --label-muted:#8ea2b5;
+    --f-social:#8b7752; --f-servico:#5b7180; --f-circ:#59656f; --f-intimo:#647a5d; --f-umido:#44778b; --f-neutral:#55606a;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0a1521; --panel:#0f1e2d; --ink:#e5edf5; --muted:#8ea2b5; --line:#21364a; --hover:#14283a; --sel:#13304f;
+  --accent:#5aa9ff; --accent-ink:#06121e; --code-bg:#09131e; --bad:#ff8f86; --ok:#6fd39f;
+  --scene-bg:#0c1925; --wall:#d9e1ea; --slab:#1a2d3f; --grid-a:#1f3348; --grid-b:#162a3c;
+  --glass:#4f8fc9; --door:#8f6c49; --arc:#9fb3c6;
+  --label-bg:rgba(9,19,30,0.9); --label-ink:#e5edf5; --label-muted:#8ea2b5;
+  --f-social:#8b7752; --f-servico:#5b7180; --f-circ:#59656f; --f-intimo:#647a5d; --f-umido:#44778b; --f-neutral:#55606a;
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:14px/1.45 var(--font-body);
+  padding-block:16px;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+}
+button,input,textarea{font:inherit;color:inherit}
+
+.app{display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:16px; height:100%}
+
+.stage{
+  position:relative; min-width:0; min-height:0; overflow:hidden;
+  background:var(--scene-bg); border:1px solid var(--line); border-radius:10px;
+}
+#gl{display:block; width:100%; height:100%; touch-action:none; outline:none}
+.nogl{position:absolute; inset:0; margin:0; display:grid; place-items:center; padding:24px; text-align:center; color:var(--muted)}
+
+.viewbar{position:absolute; top:12px; left:12px; right:12px; display:flex; flex-wrap:wrap; gap:6px; pointer-events:none}
+.hud{position:absolute; left:12px; right:12px; bottom:12px; display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:8px; pointer-events:none}
+.viewbar>*,.hud>*{pointer-events:auto}
+
+.seg{
+  padding:7px 12px; border:1px solid var(--line); border-radius:6px; cursor:pointer;
+  background:var(--panel); font-weight:500; font-size:13px; line-height:1.2;
+}
+.seg:hover{background:var(--hover)}
+.seg[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+.seg:focus-visible,.btn:focus-visible,.room:focus-visible,.how summary:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+.cut{
+  display:flex; align-items:center; gap:10px; padding:8px 12px; min-width:0;
+  background:var(--panel); border:1px solid var(--line); border-radius:8px;
+}
+.cut span{font-size:13px; font-weight:500}
+.cut input[type=range]{width:150px; min-width:90px; flex:1 1 auto; accent-color:var(--accent); margin:0}
+.cut output{font:500 12px var(--font-mono); font-variant-numeric:tabular-nums; min-width:62px; text-align:right}
+
+.toggles{display:flex; gap:6px}
+.chip{position:relative; display:inline-block}
+.chip input{position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer}
+.chip span{
+  display:block; padding:8px 12px; border:1px solid var(--line); border-radius:999px;
+  background:var(--panel); font-size:13px; font-weight:500; line-height:1.2;
+}
+.chip input:checked+span{background:var(--sel); border-color:var(--accent); color:var(--accent)}
+.chip input:focus-visible+span{outline:2px solid var(--accent); outline-offset:2px}
+
+.panel{
+  min-width:0; min-height:0; overflow-y:auto; padding:20px 18px;
+  display:flex; flex-direction:column; gap:22px;
+  background:var(--panel); border:1px solid var(--line); border-radius:10px;
+}
+h1{margin:0; font:600 42px/0.95 var(--font-display); text-transform:uppercase; letter-spacing:0.02em; text-wrap:balance}
+.meta{margin:8px 0 0; font:400 12px var(--font-mono); color:var(--muted)}
+.hint{margin:12px 0 0; color:var(--muted); font-size:13px}
+
+.eyebrow{
+  display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:8px;
+  font:500 11px var(--font-mono); letter-spacing:0.08em; text-transform:uppercase; color:var(--muted);
+}
+.eyebrow #total{letter-spacing:0; text-transform:none; font-variant-numeric:tabular-nums; color:var(--ink)}
+
+.rooms{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px}
+.room{
+  width:100%; display:grid; grid-template-columns:14px minmax(0,1fr) auto; align-items:center; gap:10px;
+  padding:9px 10px; text-align:left; background:transparent; border:1px solid transparent; border-radius:6px; cursor:pointer;
+}
+.room:hover{background:var(--hover)}
+.room[aria-pressed="true"]{background:var(--sel); border-color:var(--accent)}
+.room .sw{width:14px; height:14px; border-radius:3px; border:1px solid var(--line)}
+.room .nm{font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.room .ar{font:400 12px var(--font-mono); font-variant-numeric:tabular-nums; color:var(--muted)}
+
+.note{margin:8px 0 0; font-size:12px; color:var(--muted)}
+
+#json{
+  display:block; width:100%; min-height:240px; resize:vertical; padding:10px;
+  background:var(--code-bg); border:1px solid var(--line); border-radius:6px;
+  font:400 12px/1.5 var(--font-mono); white-space:pre; overflow:auto; tab-size:2;
+}
+#json:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
+.actions{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+.btn{
+  padding:8px 14px; border:1px solid var(--line); border-radius:6px; background:var(--panel); cursor:pointer;
+  font-size:13px; font-weight:500;
+}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.08)}
+.status{min-height:1.4em; margin:8px 0 0; font-size:12px; color:var(--ok)}
+.status.err{color:var(--bad)}
+
+.how{margin-top:10px; font-size:12px}
+.how summary{cursor:pointer; font-weight:500; padding:4px 0}
+.how dl{margin:6px 0 0; display:grid; gap:6px}
+.how dt{font:500 12px var(--font-mono); color:var(--ink)}
+.how dd{margin:0; color:var(--muted)}
+
+@media (max-width: 860px){
+  html,body{height:auto; min-height:100%}
+  .app{grid-template-columns:minmax(0,1fr); height:auto}
+  .stage{height:66vh; min-height:380px}
+  .panel{overflow:visible}
+  .cut input[type=range]{width:100px}
+}
+</style>
+
+<div class="app">
+  <main class="stage" id="stage">
+    <canvas id="gl" role="img" aria-label="Modelo 3D da planta"></canvas>
+    <p class="nogl" id="nogl" hidden>Não consegui iniciar o 3D neste navegador. Confira se a aceleração por hardware (WebGL) está ligada.</p>
+
+    <div class="viewbar" role="group" aria-label="Vista">
+      <button type="button" class="seg" data-view="persp" aria-pressed="true">Perspectiva</button>
+      <button type="button" class="seg" data-view="iso" aria-pressed="false">Isométrica</button>
+      <button type="button" class="seg" data-view="plan" aria-pressed="false">Planta baixa</button>
+    </div>
+
+    <div class="hud">
+      <label class="cut" for="cut">
+        <span>Corte</span>
+        <input id="cut" type="range" min="0.2" max="2.7" step="0.05" value="2.7">
+        <output id="cutOut" for="cut">2,70 m</output>
+      </label>
+      <div class="toggles">
+        <label class="chip"><input type="checkbox" id="tLabels" checked><span>Rótulos</span></label>
+        <label class="chip"><input type="checkbox" id="tGrid" checked><span>Grade</span></label>
+      </div>
+    </div>
+  </main>
+
+  <aside class="panel">
+    <header>
+      <h1>Planta 3D</h1>
+      <p class="meta" id="planMeta"></p>
+      <p class="hint">Arraste para girar, role para aproximar e clique num cômodo para destacar. No celular, um dedo gira e dois dedos movem e aproximam.</p>
+    </header>
+
+    <section>
+      <div class="eyebrow"><span>Cômodos</span><span id="total"></span></div>
+      <ul class="rooms" id="rooms"></ul>
+      <p class="note">Áreas medidas de eixo a eixo das paredes.</p>
+    </section>
+
+    <section>
+      <div class="eyebrow"><span>Planta em JSON</span></div>
+      <textarea id="json" spellcheck="false" aria-label="Planta em JSON"></textarea>
+      <div class="actions">
+        <button type="button" class="btn primary" id="btnApply">Aplicar</button>
+        <button type="button" class="btn" id="btnCopy">Copiar</button>
+        <button type="button" class="btn" id="btnReset">Exemplo</button>
+      </div>
+      <p class="status" id="status" role="status"></p>
+      <details class="how">
+        <summary>Como preencher</summary>
+        <dl>
+          <dt>walls[].a e b</dt><dd>Pontos [x, y] em metros, no eixo da parede. t é a espessura.</dd>
+          <dt>openings[]</dt><dd>type: door, window ou opening (passagem). at é a distância do ponto a até o centro da abertura. w largura, h altura, sill altura do peitoril.</dd>
+          <dt>rooms[].pts</dt><dd>Cantos do cômodo em [x, y]. kind (social, servico, circulacao, intimo, umido) define a cor do piso.</dd>
+        </dl>
+      </details>
+      <p class="note">Tem a planta em foto ou PDF? Mande no chat que eu converto para este JSON.</p>
+    </section>
+  </aside>
+</div>
+
+<script type="application/json" id="sample">
+{
+  "name": "Apartamento exemplo",
+  "wallHeight": 2.7,
+  "rooms": [
+    { "name": "Sala", "kind": "social", "pts": [[0, 0], [5.5, 0], [5.5, 4.5], [0, 4.5]] },
+    { "name": "Cozinha", "kind": "servico", "pts": [[0, 4.5], [5.5, 4.5], [5.5, 7], [0, 7]] },
+    { "name": "Corredor", "kind": "circulacao", "pts": [[5.5, 0], [6.8, 0], [6.8, 7], [5.5, 7]] },
+    { "name": "Quarto", "kind": "intimo", "pts": [[6.8, 0], [10, 0], [10, 3.2], [6.8, 3.2]] },
+    { "name": "Banheiro", "kind": "umido", "pts": [[6.8, 3.2], [10, 3.2], [10, 5], [6.8, 5]] },
+    { "name": "Escritório", "kind": "intimo", "pts": [[6.8, 5], [10, 5], [10, 7], [6.8, 7]] }
+  ],
+  "walls": [
+    { "a": [0, 0], "b": [10, 0], "t": 0.25, "openings": [
+      { "type": "window", "at": 2.75, "w": 2.4, "h": 1.3, "sill": 0.9 },
+      { "type": "window", "at": 8.4, "w": 1.4, "h": 1.3, "sill": 0.9 }
+    ] },
+    { "a": [10, 0], "b": [10, 7], "t": 0.25, "openings": [
+      { "type": "window", "at": 1.6, "w": 1.4, "h": 1.3, "sill": 0.9 },
+      { "type": "window", "at": 4.1, "w": 0.6, "h": 0.5, "sill": 1.6 },
+      { "type": "window", "at": 6.0, "w": 1.4, "h": 1.3, "sill": 0.9 }
+    ] },
+    { "a": [0, 7], "b": [10, 7], "t": 0.25, "openings": [
+      { "type": "window", "at": 2.75, "w": 1.6, "h": 1.1, "sill": 1.0 },
+      { "type": "door", "at": 6.15, "w": 0.9, "h": 2.1 }
+    ] },
+    { "a": [0, 0], "b": [0, 7], "t": 0.25, "openings": [
+      { "type": "window", "at": 2.25, "w": 2.0, "h": 1.6, "sill": 0.4 }
+    ] },
+    { "a": [5.5, 0], "b": [5.5, 7], "t": 0.15, "openings": [
+      { "type": "opening", "at": 2.0, "w": 1.8, "h": 2.1 },
+      { "type": "door", "at": 5.75, "w": 0.9, "h": 2.1, "swing": -1 }
+    ] },
+    { "a": [6.8, 0], "b": [6.8, 7], "t": 0.15, "openings": [
+      { "type": "door", "at": 1.0, "w": 0.9, "h": 2.1 },
+      { "type": "door", "at": 4.1, "w": 0.8, "h": 2.1 },
+      { "type": "door", "at": 6.0, "w": 0.9, "h": 2.1 }
+    ] },
+    { "a": [6.8, 3.2], "b": [10, 3.2], "t": 0.15 },
+    { "a": [6.8, 5], "b": [10, 5], "t": 0.15 },
+    { "a": [0, 4.5], "b": [5.5, 4.5], "t": 0.15, "openings": [
+      { "type": "opening", "at": 2.75, "w": 2.0, "h": 2.1 }
+    ] }
+  ]
+}
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function(){
+'use strict';
+
+var $ = function(s){ return document.querySelector(s); };
+var fmt = function(n){ return n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+var tok = function(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); };
+var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+var stage = $('#stage'), canvas = $('#gl'), ta = $('#json'), statusEl = $('#status');
+var SAMPLE_TEXT = $('#sample').textContent.trim();
+
+var renderer;
+try{
+  if(!window.THREE || !THREE.OrbitControls) throw new Error('three');
+  renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true});
+}catch(e){
+  $('#nogl').hidden = false;
+  return;
+}
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+var scene = new THREE.Scene();
+var camera = new THREE.PerspectiveCamera(40, 1, 0.1, 300);
+camera.position.set(12, 12, 14);
+var controls = new THREE.OrbitControls(camera, canvas);
+controls.maxPolarAngle = Math.PI/2 - 0.01;
+controls.minDistance = 2;
+controls.maxDistance = 90;
+
+var dirty = true, tw = null;
+controls.addEventListener('change', function(){ dirty = true; });
+controls.addEventListener('start', function(){ tw = null; });
+
+var hemi = new THREE.HemisphereLight(0xffffff, 0x8fa0b2, 0.6);
+var sun = new THREE.DirectionalLight(0xffffff, 0.7);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.03;
+scene.add(hemi, sun, sun.target);
+
+var M = {
+  wall: new THREE.MeshStandardMaterial({roughness:0.92, metalness:0}),
+  door: new THREE.MeshStandardMaterial({roughness:0.7, metalness:0}),
+  glass: new THREE.MeshStandardMaterial({transparent:true, opacity:0.38, roughness:0.15, metalness:0, side:THREE.DoubleSide, depthWrite:false}),
+  slab: new THREE.MeshStandardMaterial({roughness:1, metalness:0}),
+  arc: new THREE.LineBasicMaterial({transparent:true, opacity:0.75})
+};
+var G = {slab:new THREE.Group(), floors:new THREE.Group(), labels:new THREE.Group(), walls:new THREE.Group(), grid:new THREE.Group()};
+Object.keys(G).forEach(function(k){ scene.add(G[k]); });
+
+var FLOOR = {social:'--f-social', servico:'--f-servico', circulacao:'--f-circ', intimo:'--f-intimo', umido:'--f-umido'};
+var plan = null, bounds = null, cutH = 2.7, selected = -1, floorMeshes = [], listBtns = [];
+
+function applyTokens(){
+  M.wall.color.set(tok('--wall'));
+  M.door.color.set(tok('--door'));
+  M.glass.color.set(tok('--glass'));
+  M.slab.color.set(tok('--slab'));
+  M.arc.color.set(tok('--arc'));
+  scene.background = new THREE.Color(tok('--scene-bg'));
+}
+
+function clear(g){
+  for(var i = g.children.length - 1; i >= 0; i--){
+    var c = g.children[i];
+    g.remove(c);
+    c.traverse(function(o){
+      if(o.geometry && !o.isSprite) o.geometry.dispose();
+      if(o.userData && o.userData.own && o.material){
+        if(o.material.map) o.material.map.dispose();
+        o.material.dispose();
+      }
+    });
+  }
+}
+
+/* ---------- plano: validação ---------- */
+function normalize(p){
+  if(!p || typeof p !== 'object' || Array.isArray(p)) throw new Error('O JSON precisa ser um objeto com "rooms" e "walls".');
+  if(!Array.isArray(p.rooms) || !p.rooms.length) throw new Error('Falta a lista "rooms" com pelo menos um cômodo.');
+  if(!Array.isArray(p.walls)) throw new Error('Falta a lista "walls".');
+  var isPt = function(v){ return Array.isArray(v) && v.length >= 2 && isFinite(v[0]) && isFinite(v[1]); };
+  var H = +p.wallHeight; if(!(H > 0.5 && H < 10)) H = 2.7;
+  var rooms = p.rooms.map(function(r, i){
+    if(!r || !Array.isArray(r.pts) || r.pts.length < 3 || !r.pts.every(isPt))
+      throw new Error('Cômodo ' + (i+1) + ': "pts" precisa de 3 ou mais pontos [x, y].');
+    return {name:String(r.name || ('Cômodo ' + (i+1))), kind:String(r.kind || ''), pts:r.pts.map(function(q){ return [+q[0], +q[1]]; })};
+  });
+  var walls = p.walls.map(function(w, i){
+    if(!w || !isPt(w.a) || !isPt(w.b)) throw new Error('Parede ' + (i+1) + ': "a" e "b" precisam ser pontos [x, y].');
+    var ops = (Array.isArray(w.openings) ? w.openings : []).map(function(o, j){
+      o = o || {};
+      var type = o.type === 'window' ? 'window' : (o.type === 'opening' ? 'opening' : 'door');
+      if(isNaN(+o.at) || o.at === null || o.at === undefined) throw new Error('Parede ' + (i+1) + ', abertura ' + (j+1) + ': falta "at" (distância em metros do ponto a até o centro).');
+      var wd = +o.w; if(!(wd > 0.2)) wd = type === 'window' ? 1.2 : 0.9;
+      var h = +o.h; if(!(h > 0.1)) h = type === 'window' ? 1.2 : 2.1;
+      var sill = +o.sill; if(!(sill >= 0)) sill = type === 'window' ? 0.9 : 0;
+      return {type:type, at:+o.at, w:wd, h:h, sill:sill, swing:o.swing === -1 ? -1 : 1};
+    });
+    var t = +w.t; if(!(t > 0.02 && t < 1.5)) t = 0.15;
+    return {a:[+w.a[0], +w.a[1]], b:[+w.b[0], +w.b[1]], t:t, openings:ops};
+  });
+  return {name:String(p.name || 'Planta sem nome'), wallHeight:H, rooms:rooms, walls:walls};
+}
+
+function areaOf(pts){
+  var s = 0;
+  for(var i = 0; i < pts.length; i++){ var p = pts[i], q = pts[(i+1) % pts.length]; s += p[0]*q[1] - q[0]*p[1]; }
+  return s/2;
+}
+function centroid(pts){
+  var a = areaOf(pts);
+  if(Math.abs(a) < 1e-9) return [pts[0][0], pts[0][1]];
+  var cx = 0, cy = 0;
+  for(var i = 0; i < pts.length; i++){
+    var p = pts[i], q = pts[(i+1) % pts.length], f = p[0]*q[1] - q[0]*p[1];
+    cx += (p[0] + q[0]) * f; cy += (p[1] + q[1]) * f;
+  }
+  return [cx/(6*a), cy/(6*a)];
+}
+function computeBounds(){
+  var x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  var add = function(p){ x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); };
+  plan.rooms.forEach(function(r){ r.pts.forEach(add); });
+  plan.walls.forEach(function(w){ add(w.a); add(w.b); });
+  bounds = {x0:x0, x1:x1, y0:y0, y1:y1, w:Math.max(x1-x0, 1), d:Math.max(y1-y0, 1), cx:(x0+x1)/2, cz:(y0+y1)/2};
+}
+
+/* ---------- rótulos ---------- */
+function roundRect(x, px, py, w, h, r){
+  x.beginPath();
+  x.moveTo(px+r, py); x.lineTo(px+w-r, py); x.arcTo(px+w, py, px+w, py+r, r);
+  x.lineTo(px+w, py+h-r); x.arcTo(px+w, py+h, px+w-r, py+h, r);
+  x.lineTo(px+r, py+h); x.arcTo(px, py+h, px, py+h-r, r);
+  x.lineTo(px, py+r); x.arcTo(px, py, px+r, py, r);
+  x.closePath();
+}
+function makeLabel(name, area){
+  var dpr = 2;
+  var f1 = '600 ' + (30*dpr) + 'px "Barlow Condensed","Arial Narrow",sans-serif';
+  var f2 = '500 ' + (18*dpr) + 'px "IBM Plex Mono",ui-monospace,monospace';
+  var c = document.createElement('canvas'), x = c.getContext('2d');
+  var t1 = name.toUpperCase(), t2 = fmt(area) + ' m²';
+  x.font = f1; var w1 = x.measureText(t1).width;
+  x.font = f2; var w2 = x.measureText(t2).width;
+  var padX = 14*dpr, padY = 10*dpr, gap = 4*dpr;
+  var W = Math.ceil(Math.max(w1, w2) + padX*2), H = Math.ceil(30*dpr + gap + 18*dpr + padY*2);
+  c.width = W; c.height = H;
+  x.fillStyle = tok('--label-bg'); roundRect(x, 0, 0, W, H, 8*dpr); x.fill();
+  x.textAlign = 'center'; x.textBaseline = 'top';
+  x.font = f1; x.fillStyle = tok('--label-ink'); x.fillText(t1, W/2, padY);
+  x.font = f2; x.fillStyle = tok('--label-muted'); x.fillText(t2, W/2, padY + 30*dpr + gap);
+  var tex = new THREE.CanvasTexture(c);
+  tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
+  var sp = new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true, depthTest:false}));
+  var u = 0.017;
+  sp.scale.set(W/dpr*u, H/dpr*u, 1);
+  sp.renderOrder = 10;
+  sp.userData = {own:true};
+  return sp;
+}
+
+/* ---------- cena: piso, laje, grade, rótulos ---------- */
+function buildStatic(){
+  clear(G.slab); clear(G.floors); clear(G.labels); clear(G.grid);
+  floorMeshes = [];
+  var b = bounds, m = 0.6;
+
+  var slab = new THREE.Mesh(new THREE.BoxGeometry(b.w + 2*m, 0.2, b.d + 2*m), M.slab);
+  slab.position.set(b.cx, -0.1, b.cz);
+  slab.receiveShadow = true;
+  G.slab.add(slab);
+
+  var size = Math.ceil(Math.max(b.w, b.d) + 8); if(size % 2) size++;
+  var grid = new THREE.GridHelper(size, size, new THREE.Color(tok('--grid-a')), new THREE.Color(tok('--grid-b')));
+  grid.position.set(b.cx, -0.2, b.cz);
+  G.grid.add(grid);
+
+  plan.rooms.forEach(function(r, i){
+    var sh = new THREE.Shape();
+    r.pts.forEach(function(p, k){ if(k === 0) sh.moveTo(p[0], -p[1]); else sh.lineTo(p[0], -p[1]); });
+    var mat = new THREE.MeshStandardMaterial({color:new THREE.Color(tok(FLOOR[r.kind] || '--f-neutral')), roughness:0.85, metalness:0, emissive:new THREE.Color(0x000000)});
+    var mesh = new THREE.Mesh(new THREE.ShapeGeometry(sh), mat);
+    mesh.rotation.x = -Math.PI/2;
+    mesh.position.y = 0.01;
+    mesh.receiveShadow = true;
+    mesh.userData = {own:true, room:i};
+    G.floors.add(mesh);
+    floorMeshes.push(mesh);
+
+    var c = centroid(r.pts);
+    var sp = makeLabel(r.name, Math.abs(areaOf(r.pts)));
+    sp.position.set(c[0], 0.35, c[1]);
+    G.labels.add(sp);
+  });
+  G.labels.visible = $('#tLabels').checked;
+  G.grid.visible = $('#tGrid').checked;
+
+  var r = Math.max(b.w, b.d);
+  sun.position.set(b.cx + r*0.6, r*1.4, b.cz + r*0.5);
+  sun.target.position.set(b.cx, 0, b.cz);
+  var s = sun.shadow.camera;
+  s.left = -r; s.right = r; s.top = r; s.bottom = -r; s.near = 1; s.far = r*4;
+  s.updateProjectionMatrix();
+  sun.target.updateMatrixWorld();
+  applySelection();
+}
+
+/* ---------- cena: paredes com aberturas ---------- */
+function buildWalls(){
+  clear(G.walls);
+  var H = plan.wallHeight, cut = Math.min(cutH, H);
+
+  plan.walls.forEach(function(w){
+    var ax = w.a[0], az = w.a[1], dx = w.b[0] - ax, dz = w.b[1] - az;
+    var L = Math.hypot(dx, dz); if(L < 1e-6) return;
+    var ux = dx/L, uz = dz/L, t = w.t, rot = -Math.atan2(dz, dx);
+
+    function box(s0, s1, y0, y1, th, mat, shadow){
+      y1 = Math.min(y1, cut);
+      if(y1 - y0 < 0.005 || s1 - s0 < 0.005) return null;
+      var m = new THREE.Mesh(new THREE.BoxGeometry(s1 - s0, y1 - y0, th), mat);
+      var sm = (s0 + s1)/2;
+      m.position.set(ax + ux*sm, (y0 + y1)/2, az + uz*sm);
+      m.rotation.y = rot;
+      if(shadow){ m.castShadow = true; m.receiveShadow = true; }
+      G.walls.add(m);
+      return m;
+    }
+
+    var ops = w.openings.map(function(o){
+      var half = o.w/2, at = Math.min(Math.max(o.at, half), Math.max(L - half, half));
+      return {type:o.type, at:at, w:o.w, h:o.h, sill:o.sill, swing:o.swing};
+    }).filter(function(o){ return o.w <= L + 1e-6; }).sort(function(p, q){ return p.at - q.at; });
+
+    var cur = -t/2;
+    ops.forEach(function(o){
+      var o0 = o.at - o.w/2, o1 = o.at + o.w/2;
+      if(o0 < cur) return;
+      box(cur, o0, 0, H, t, M.wall, true);
+      box(o0, o1, 0, o.sill, t, M.wall, true);
+      box(o0, o1, o.sill + o.h, H, t, M.wall, true);
+      cur = o1;
+
+      if(o.type === 'window'){
+        var gh = Math.min(o.h, cut - o.sill);
+        if(gh > 0.02){
+          var gl = new THREE.Mesh(new THREE.BoxGeometry(o.w, gh, 0.03), M.glass);
+          gl.position.set(ax + ux*o.at, o.sill + gh/2, az + uz*o.at);
+          gl.rotation.y = rot;
+          G.walls.add(gl);
+        }
+        if(o.sill > 0.05) box(o0 - 0.06, o1 + 0.06, o.sill - 0.04, o.sill, t + 0.1, M.wall, true);
+      }
+
+      if(o.type === 'door'){
+        var hh = Math.min(o.h - 0.02, cut);
+        if(hh > 0.05){
+          var pivot = new THREE.Group();
+          pivot.position.set(ax + ux*o0, 0, az + uz*o0);
+          pivot.rotation.y = rot;
+          var swing = new THREE.Group();
+          swing.rotation.y = o.swing * 1.1;
+          var leaf = new THREE.Mesh(new THREE.BoxGeometry(o.w - 0.03, hh, 0.04), M.door);
+          leaf.position.set(o.w/2, hh/2, 0);
+          leaf.castShadow = true;
+          swing.add(leaf);
+          pivot.add(swing);
+
+          var pts = [];
+          for(var k = 0; k <= 16; k++){
+            var phi = o.swing * (Math.PI/2) * k/16;
+            pts.push(new THREE.Vector3(o.w*Math.cos(phi), 0.03, -o.w*Math.sin(phi)));
+          }
+          var arc = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), M.arc);
+          pivot.add(arc);
+          G.walls.add(pivot);
+        }
+      }
+    });
+    box(cur, L + t/2, 0, H, t, M.wall, true);
+  });
+  dirty = true;
+}
+
+/* ---------- lista de cômodos e seleção ---------- */
+function renderList(){
+  var ul = $('#rooms'); ul.textContent = ''; listBtns = [];
+  var total = 0;
+  plan.rooms.forEach(function(r, i){
+    var a = Math.abs(areaOf(r.pts)); total += a;
+    var li = document.createElement('li');
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'room'; b.setAttribute('aria-pressed', i === selected ? 'true' : 'false');
+    var sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = tok(FLOOR[r.kind] || '--f-neutral');
+    var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = r.name;
+    var ar = document.createElement('span'); ar.className = 'ar'; ar.textContent = fmt(a) + ' m²';
+    b.appendChild(sw); b.appendChild(nm); b.appendChild(ar);
+    b.addEventListener('click', function(){ select(selected === i ? -1 : i, true); });
+    li.appendChild(b); ul.appendChild(li); listBtns.push(b);
+  });
+  $('#total').textContent = plan.rooms.length + ' cômodos · ' + fmt(total) + ' m²';
+}
+
+function applySelection(){
+  floorMeshes.forEach(function(m, i){
+    var on = i === selected;
+    m.material.emissive.set(on ? tok('--accent') : '#000000');
+    m.material.emissiveIntensity = on ? 0.32 : 0;
+  });
+  listBtns.forEach(function(b, i){ b.setAttribute('aria-pressed', i === selected ? 'true' : 'false'); });
+  dirty = true;
+}
+
+function select(i, fly){
+  selected = i;
+  applySelection();
+  if(i >= 0 && fly){
+    var c = centroid(plan.rooms[i].pts);
+    var tgt = new THREE.Vector3(c[0], 0, c[1]);
+    var pos = camera.position.clone().add(tgt.clone().sub(controls.target));
+    tweenTo(pos, tgt, camera.fov, false);
+  }
+}
+
+/* ---------- câmera ---------- */
+function tweenTo(pos, tgt, fov, instant){
+  if(instant || reduce){
+    camera.position.copy(pos); controls.target.copy(tgt);
+    camera.fov = fov; camera.updateProjectionMatrix();
+    controls.update(); tw = null; dirty = true;
+    return;
+  }
+  tw = {t:0, p0:camera.position.clone(), p1:pos.clone(), t0:controls.target.clone(), t1:tgt.clone(), f0:camera.fov, f1:fov};
+}
+
+function setCut(v){
+  cutH = v;
+  var s = $('#cut'); s.value = v;
+  $('#cutOut').textContent = fmt(+v) + ' m';
+  buildWalls();
+}
+
+function setView(v, instant){
+  var b = bounds, H = plan.wallHeight;
+  var diag = Math.hypot(b.w, b.d, H), fov, pos, dist;
+  var tgt = new THREE.Vector3(b.cx, H*0.2, b.cz);
+  if(v === 'plan'){
+    fov = 40;
+    var fitH = Math.max(b.d*1.2, b.w*1.2/camera.aspect);
+    dist = (fitH/2)/Math.tan(fov*Math.PI/360);
+    tgt.set(b.cx, 0, b.cz);
+    pos = new THREE.Vector3(b.cx, dist, b.cz + 0.05);
+    setCut(Math.min(1.2, H));
+  }else if(v === 'iso'){
+    fov = 20;
+    dist = diag*0.5/Math.sin(fov*Math.PI/360)*0.85;
+    pos = tgt.clone().add(new THREE.Vector3(1, 1, 1).normalize().multiplyScalar(dist));
+    setCut(H);
+  }else{
+    fov = 40;
+    dist = diag*0.5/Math.sin(fov*Math.PI/360)*0.85;
+    pos = tgt.clone().add(new THREE.Vector3(0.5, 0.72, 0.95).normalize().multiplyScalar(dist));
+    setCut(H);
+  }
+  tweenTo(pos, tgt, fov, instant);
+  document.querySelectorAll('.seg').forEach(function(btn){
+    btn.setAttribute('aria-pressed', btn.dataset.view === v ? 'true' : 'false');
+  });
+}
+
+/* ---------- aplicar planta ---------- */
+function setPlan(p){
+  plan = p;
+  computeBounds();
+  selected = -1;
+  var s = $('#cut'); s.max = String(plan.wallHeight);
+  $('#planMeta').textContent = plan.name + ' · pé-direito ' + fmt(plan.wallHeight) + ' m';
+  cutH = plan.wallHeight;
+  s.value = cutH; $('#cutOut').textContent = fmt(cutH) + ' m';
+  renderList();
+  buildStatic();
+  buildWalls();
+}
+
+function say(msg, isErr){
+  statusEl.textContent = msg;
+  statusEl.className = 'status' + (isErr ? ' err' : '');
+}
+function applyJson(){
+  try{
+    var p = normalize(JSON.parse(ta.value));
+    setPlan(p);
+    setView('persp', false);
+    say('Planta aplicada: ' + p.rooms.length + ' cômodos e ' + p.walls.length + ' paredes.', false);
+  }catch(e){
+    say(e instanceof SyntaxError ? 'JSON inválido: ' + e.message : e.message, true);
+  }
+}
+
+/* ---------- eventos ---------- */
+document.querySelectorAll('.seg').forEach(function(btn){
+  btn.addEventListener('click', function(){ if(plan) setView(btn.dataset.view, false); });
+});
+$('#cut').addEventListener('input', function(e){
+  if(!plan) return;
+  cutH = +e.target.value;
+  $('#cutOut').textContent = fmt(cutH) + ' m';
+  buildWalls();
+});
+$('#tLabels').addEventListener('change', function(e){ G.labels.visible = e.target.checked; dirty = true; });
+$('#tGrid').addEventListener('change', function(e){ G.grid.visible = e.target.checked; dirty = true; });
+$('#btnApply').addEventListener('click', applyJson);
+$('#btnReset').addEventListener('click', function(){ ta.value = SAMPLE_TEXT; applyJson(); });
+$('#btnCopy').addEventListener('click', function(){
+  var fallback = function(){ ta.focus(); ta.select(); say('Texto selecionado. Use Ctrl+C para copiar.', false); };
+  try{
+    navigator.clipboard.writeText(ta.value).then(function(){ say('JSON copiado.', false); }, fallback);
+  }catch(e){ fallback(); }
+});
+ta.addEventListener('keydown', function(e){
+  if((e.ctrlKey || e.metaKey) && e.key === 'Enter'){ e.preventDefault(); applyJson(); }
+});
+
+var down = null;
+canvas.addEventListener('pointerdown', function(e){ down = {x:e.clientX, y:e.clientY, t:performance.now()}; });
+canvas.addEventListener('pointerup', function(e){
+  if(!down || !plan) return;
+  var moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dt = performance.now() - down.t;
+  down = null;
+  if(moved > 5 || dt > 500) return;
+  var r = canvas.getBoundingClientRect();
+  var ndc = new THREE.Vector2((e.clientX - r.left)/r.width*2 - 1, -((e.clientY - r.top)/r.height)*2 + 1);
+  var rc = new THREE.Raycaster();
+  rc.setFromCamera(ndc, camera);
+  var hits = rc.intersectObjects([G.floors, G.walls], true).filter(function(h){
+    return h.object.isMesh && h.object.material !== M.glass;
+  });
+  if(!hits.length) return;
+  var o = hits[0].object;
+  if(o.userData && o.userData.room !== undefined) select(o.userData.room === selected ? -1 : o.userData.room, false);
+  else select(-1, false);
+});
+
+function resize(){
+  var w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(w, h, false);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+  dirty = true;
+}
+if(window.ResizeObserver) new ResizeObserver(resize).observe(stage);
+window.addEventListener('resize', resize);
+
+/* ---------- tema ---------- */
+var themePending = false;
+function onTheme(){
+  if(themePending) return;
+  themePending = true;
+  requestAnimationFrame(function(){
+    themePending = false;
+    applyTokens();
+    if(plan){ buildStatic(); buildWalls(); renderList(); }
+    dirty = true;
+  });
+}
+if(window.matchMedia){
+  var mq = window.matchMedia('(prefers-color-scheme: dark)');
+  if(mq.addEventListener) mq.addEventListener('change', onTheme); else if(mq.addListener) mq.addListener(onTheme);
+}
+new MutationObserver(onTheme).observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
+
+if(document.fonts && document.fonts.load){
+  Promise.all([
+    document.fonts.load('600 30px "Barlow Condensed"'),
+    document.fonts.load('500 18px "IBM Plex Mono"')
+  ]).then(function(){ if(plan){ buildStatic(); dirty = true; } }, function(){});
+}
+
+/* ---------- laço de render ---------- */
+var last = performance.now();
+function loop(now){
+  requestAnimationFrame(loop);
+  var dt = Math.min((now - last)/1000, 0.1); last = now;
+  if(tw){
+    tw.t = Math.min(1, tw.t + dt/0.5);
+    var e = 1 - Math.pow(1 - tw.t, 3);
+    camera.position.lerpVectors(tw.p0, tw.p1, e);
+    controls.target.lerpVectors(tw.t0, tw.t1, e);
+    camera.fov = tw.f0 + (tw.f1 - tw.f0)*e;
+    camera.updateProjectionMatrix();
+    controls.update();
+    if(tw.t >= 1) tw = null;
+    dirty = true;
+  }
+  if(dirty){ dirty = false; renderer.render(scene, camera); }
+}
+
+/* ---------- início ---------- */
+ta.value = SAMPLE_TEXT;
+applyTokens();
+resize();
+setPlan(normalize(JSON.parse(SAMPLE_TEXT)));
+setView('persp', true);
+requestAnimationFrame(loop);
+})();
+</script>
